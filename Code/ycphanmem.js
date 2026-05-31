@@ -154,71 +154,19 @@ document.addEventListener('DOMContentLoaded', function () {
 // ========== NAVIGATION FUNCTIONS ==========
 
 function showinfo(sectionId) {
-    const allSections = document.querySelectorAll('.section');
-    allSections.forEach(section => section.classList.remove('section-active'));
-
-    const targetSection = document.getElementById(sectionId);
-    if (targetSection) {
-        targetSection.classList.add('section-active');
-        console.log(`Đã chuyển đến section: ${sectionId}`);
-    } else {
-        console.warn(`Không tìm thấy section với ID: ${sectionId}`);
-        createNewSection(sectionId);
-    }
-
-    updateNavActive(sectionId);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    QLDT.showinfo(sectionId);
 }
 
 function toggleDropDown(dropdownId) {
-    let itemsId = '';
-    switch (dropdownId) {
-        case 'qltochuc-dropdown':
-            itemsId = 'tochuc-items';
-            break;
-        case 'xaydungctdt-dropdown':
-            itemsId = 'ctdt-items';
-            break;
-        case 'quanlynhansu-dropdown' :
-            itemsId = 'nhansu-items';
-            break
-        default:
-            console.warn(`Unknown dropdown ID: ${dropdownId}`);
-            return;
-    }
-
-    const dropItems = document.getElementById(itemsId);
-    const navLink = dropItems ? dropItems.previousElementSibling : null;
-
-    if (dropItems && navLink) {
-        if (dropItems.style.display === 'flex') {
-            dropItems.style.display = 'none';
-            navLink.classList.remove('active');
-        } else {
-            closeAllDropdowns();
-            dropItems.style.display = 'flex';
-            navLink.classList.add('active');
-        }
-    }
+    QLDT.toggleDropDown(dropdownId);
 }
 
 function closeAllDropdowns() {
-    document.querySelectorAll('.drop-items').forEach(dropdown => {
-        dropdown.style.display = 'none';
-    });
-    document.querySelectorAll('.nav-link').forEach(link => {
-        link.classList.remove('active');
-    });
+    QLDT.closeAllDropdowns();
 }
 
 function updateNavActive(sectionId) {
-    const allNavLinks = document.querySelectorAll('.nav-link');
-    allNavLinks.forEach(link => link.classList.remove('active'));
-
-    const targetNavLink = document.querySelector(`[onclick*="${sectionId}"]`);
-    if (targetNavLink && targetNavLink.classList.contains('nav-link')) {
-        targetNavLink.classList.add('active');
-    }
+    QLDT.updateNavActive(sectionId);
 }
 
 function toggleSchoolDropdown(card, schoolId) {
@@ -249,33 +197,11 @@ function toggleSchoolDepartmentInfo(departmentItem, departmentId) {
 }
 
 function createNewSection(sectionId) {
-    const mainContent = document.querySelector('.main-content');
-    if (mainContent) {
-        const newSection = document.createElement('div');
-        newSection.id = sectionId;
-        newSection.className = 'section section-active';
-        newSection.innerHTML = `
-            <h2>${getSectionTitle(sectionId)}</h2>
-            <p>Nội dung ${getSectionTitle(sectionId).toLowerCase()} sẽ được hiển thị ở đây...</p>
-        `;
-        mainContent.appendChild(newSection);
-    }
+    QLDT.createNewSection(sectionId);
 }
 
 function getSectionTitle(sectionId) {
-    const titles = {
-        'dashboard': 'Tổng quan',
-        'sodo': 'Sơ đồ tổ chức',
-        'phongban': 'Thông tin phòng ban',
-        'qlnhansu': 'Quản lý nhân sự',
-        'qlgiangvien' : 'Quản lý giảng viên',
-        'qlctdt': 'Quản lý chương trình đào tạo',
-        'qlkkt': 'Quản lý khối kiến thức',
-        'qlnganhhoc': 'Quản lý ngành học',
-        'qlkhoahoc': 'Quản lý khóa học',
-        'qlhocphan': 'Quản lý học phần'
-    };
-    return titles[sectionId] || 'Không xác định';
+    return QLDT.getSectionTitle(sectionId);
 }
 
 // ========== PHÒNG BAN FUNCTIONS ==========
@@ -542,14 +468,7 @@ function cancelAddPhongBan(button) {
 }
 
 function searchPhongBan() {
-    const searchInput = document.querySelector('#phongban .search-bar input');
-    const searchTerm = searchInput.value.toLowerCase();
-    const rows = document.querySelectorAll('.tbphongban tbody tr');
-
-    rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(searchTerm) ? '' : 'none';
-    });
+    QLDT.searchTable('#phongban', '.tbphongban');
 }
 
 // ========== NHÂN SỰ FUNCTIONS ==========
@@ -902,14 +821,7 @@ function cancelAddNhanSu(button) {
 }
 
 function searchNhanSu() {
-    const searchInput = document.querySelector('#qlnhansu .search-bar input');
-    const searchTerm = searchInput.value.toLowerCase();
-    const rows = document.querySelectorAll('.tbnhansu tbody tr');
-
-    rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(searchTerm) ? '' : 'none';
-    });
+    QLDT.searchTable('#qlnhansu', '.tbnhansu');
 }
 
 
@@ -4973,38 +4885,7 @@ async function deleteHocPhi(id_hocphi) {
 // ========== UTILITY FUNCTIONS ==========
 
 function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px 20px;
-        border-radius: 8px;
-        color: white;
-        font-weight: 600;
-        z-index: 10000;
-        animation: slideIn 0.3s ease;
-        max-width: 300px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-    `;
-
-    if (type === 'success') {
-        notification.style.background = 'linear-gradient(135deg, #10b981 0%, #047857 100%)';
-    } else if (type === 'error') {
-        notification.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
-    } else {
-        notification.style.background = 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)';
-    }
-
-    notification.textContent = message;
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => {
-            document.body.removeChild(notification);
-        }, 300);
-    }, 3000);
+    return QLDT.showNotification(message, type);
 }
 
 // CSS cho animations

@@ -2,6 +2,7 @@ const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const path = require('path');
+const { processHocPhanValue } = require('./utils/hocphan');
 
 const app = express();
 const PORT = 3000;
@@ -563,16 +564,6 @@ app.delete('/api/khoa/:id', (req, res) => {
 
 
 
-
-function processHocPhanValue(value) {
-    if (!value || value.trim() === '' || 
-        value.toLowerCase().trim() === 'không' || 
-        value.toLowerCase().trim() === 'khong' ||
-        value === 'null') {
-        return null;
-    }
-    return value.trim();
-}
 
 // ✅ GET: Lấy danh sách học phần
 app.get('/api/hocphan', (req, res) => {
@@ -1881,9 +1872,13 @@ app.delete('/api/hocphi/:id', (req, res) => {
 
 // ====================== KHỞI ĐỘNG SERVER ======================
 
-app.listen(PORT, () => {
-    console.log('='.repeat(50));
-    console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
-    console.log(`📱 Mở trình duyệt và truy cập: http://localhost:${PORT}`);
-    console.log('='.repeat(50));
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log('='.repeat(50));
+        console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
+        console.log(`📱 Mở trình duyệt và truy cập: http://localhost:${PORT}`);
+        console.log('='.repeat(50));
+    });
+}
+
+module.exports = app;
