@@ -39,9 +39,12 @@ npm run test:frontend    # Chỉ frontend (whitebox + blackbox DOM)
 
 ## Mapping test case tài liệu
 
-- Backend blackbox → `Test_Cases_Backend.md`
-- Frontend blackbox → `Test_Cases_Frontend.md` (NAV, PB-FE, search, notification)
-- Whitebox → logic trong `utils/` và `utils/frontend.js`
+Tài liệu nằm trong thư mục [`Testing QLDT/`](../Testing%20QLDT/):
+
+- Backend blackbox → `Testing QLDT/Test_Cases_Backend.md`
+- Frontend blackbox → `Testing QLDT/Test_Cases_Frontend.md` (NAV, PB-FE, search, notification)
+- Chi tiết module → `Testing QLDT/backend/`, `Testing QLDT/frontend/`
+- Whitebox code → `utils/` và `tests/`
 
 ## Lưu ý
 
