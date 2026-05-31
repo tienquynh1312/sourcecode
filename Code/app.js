@@ -5,6 +5,11 @@ const path = require('path');
 
 const app = express();
 const PORT = 3000;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmail(value) {
+    return typeof value === 'string' && EMAIL_REGEX.test(value.trim());
+}
 
 // Middleware
 app.use(cors());
@@ -59,6 +64,10 @@ app.post('/api/phongban', (req, res) => {
     if (!id_phongban || !ten_phongban || !dia_chi_phongban || !email_phongban) {
         return res.status(400).json({ error: 'Vui lòng điền đầy đủ thông tin bắt buộc' });
     }
+
+    if (!isValidEmail(email_phongban)) {
+        return res.status(400).json({ error: 'Email phòng ban không hợp lệ' });
+    }
     
     const checkSql = 'SELECT id_phongban FROM phongban WHERE id_phongban = ?';
     db.query(checkSql, [id_phongban], (err, results) => {
@@ -90,6 +99,10 @@ app.post('/api/phongban', (req, res) => {
 app.put('/api/phongban/:id', (req, res) => {
     const { id } = req.params;
     const { ten_phongban, dia_chi_phongban, email_phongban, truong_phong, trang_thai_pb } = req.body;
+
+    if (email_phongban && !isValidEmail(email_phongban)) {
+        return res.status(400).json({ error: 'Email phòng ban không hợp lệ' });
+    }
     
     const sql = 'UPDATE phongban SET ten_phongban=?, dia_chi_phongban=?, email_phongban=?, truong_phong=?, trang_thai_pb=? WHERE id_phongban=?';
     db.query(sql, [ten_phongban, dia_chi_phongban, email_phongban, truong_phong, trang_thai_pb, id], (err) => {
@@ -565,13 +578,34 @@ app.delete('/api/khoa/:id', (req, res) => {
 
 
 function processHocPhanValue(value) {
-    if (!value || value.trim() === '' || 
-        value.toLowerCase().trim() === 'không' || 
-        value.toLowerCase().trim() === 'khong' ||
-        value === 'null') {
+    if (value === null || value === undefined) {
         return null;
     }
-    return value.trim();
+    const normalizedValue = String(value).trim();
+    if (!normalizedValue) {
+        return null;
+    }
+    const lowerValue = normalizedValue.toLowerCase();
+    if (lowerValue === 'không' || lowerValue === 'khong' || lowerValue === 'null') {
+        return null;
+    }
+    return normalizedValue;
+}
+
+function validateHocPhanReferences(references, callback) {
+    const uniqueReferences = [...new Set(references.filter(Boolean))];
+    if (uniqueReferences.length === 0) {
+        return callback(null, []);
+    }
+    const sql = 'SELECT ma_hocphan FROM hocphan WHERE ma_hocphan IN (?)';
+    db.query(sql, [uniqueReferences], (err, results) => {
+        if (err) {
+            return callback(err);
+        }
+        const found = new Set(results.map(row => row.ma_hocphan));
+        const missing = uniqueReferences.filter(ref => !found.has(ref));
+        callback(null, missing);
+    });
 }
 
 // ✅ GET: Lấy danh sách học phần
@@ -656,34 +690,50 @@ app.post('/api/hocphan', (req, res) => {
                 error: 'Mã học phần đã tồn tại' 
             });
         }
-        
-        // ✅ INSERT với NULL thay vì chuỗi rỗng
-        const sql = `INSERT INTO hocphan 
-            (ma_hocphan, ten_hocphan, so_tinchi, tin_chi_ly_thuyet, tin_chi_thuc_hanh, hp_tien_quyet, hp_song_hanh, hp_hoc_truoc) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-        
-        db.query(sql, [
-            ma_hocphan, 
-            ten_hocphan, 
-            parseInt(so_tinchi) || 0,
-            parseInt(tin_chi_ly_thuyet) || 0, 
-            parseInt(tin_chi_thuc_hanh) || 0, 
-            tienQuyet,    // ✅ NULL hoặc mã học phần hợp lệ
-            songHanh,     // ✅ NULL hoặc mã học phần hợp lệ
-            hocTruoc      // ✅ NULL hoặc mã học phần hợp lệ
-        ], (err, result) => {
+
+        validateHocPhanReferences([tienQuyet, songHanh, hocTruoc], (err, missingRefs) => {
             if (err) {
-                console.error('❌ Lỗi thêm học phần:', err);
+                console.error('❌ Lỗi kiểm tra học phần tiên quyết:', err);
                 return res.status(500).json({ 
-                    success: false,
-                    error: 'Lỗi thêm học phần: ' + err.message 
+                    success: false, 
+                    error: 'Lỗi kiểm tra học phần tiên quyết' 
                 });
             }
-            console.log('✅ Thêm học phần thành công:', ma_hocphan);
-            res.json({ 
-                success: true, 
-                message: 'Thêm học phần thành công',
-                ma_hocphan: ma_hocphan
+            if (missingRefs.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Học phần tham chiếu không tồn tại: ' + missingRefs.join(', ')
+                });
+            }
+
+            // ✅ INSERT với NULL thay vì chuỗi rỗng
+            const sql = `INSERT INTO hocphan 
+                (ma_hocphan, ten_hocphan, so_tinchi, tin_chi_ly_thuyet, tin_chi_thuc_hanh, hp_tien_quyet, hp_song_hanh, hp_hoc_truoc) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+            
+            db.query(sql, [
+                ma_hocphan, 
+                ten_hocphan, 
+                parseInt(so_tinchi) || 0,
+                parseInt(tin_chi_ly_thuyet) || 0, 
+                parseInt(tin_chi_thuc_hanh) || 0, 
+                tienQuyet,    // ✅ NULL hoặc mã học phần hợp lệ
+                songHanh,     // ✅ NULL hoặc mã học phần hợp lệ
+                hocTruoc      // ✅ NULL hoặc mã học phần hợp lệ
+            ], (err, result) => {
+                if (err) {
+                    console.error('❌ Lỗi thêm học phần:', err);
+                    return res.status(500).json({ 
+                        success: false,
+                        error: 'Lỗi thêm học phần: ' + err.message 
+                    });
+                }
+                console.log('✅ Thêm học phần thành công:', ma_hocphan);
+                res.json({ 
+                    success: true, 
+                    message: 'Thêm học phần thành công',
+                    ma_hocphan: ma_hocphan
+                });
             });
         });
     });
@@ -709,46 +759,62 @@ app.put('/api/hocphan/:ma', (req, res) => {
     const songHanh = processHocPhanValue(hp_song_hanh);
     const hocTruoc = processHocPhanValue(hp_hoc_truoc);
     
-    const sql = `UPDATE hocphan SET 
-        ten_hocphan=?, 
-        so_tinchi=?,
-        tin_chi_ly_thuyet=?, 
-        tin_chi_thuc_hanh=?, 
-        hp_tien_quyet=?, 
-        hp_song_hanh=?, 
-        hp_hoc_truoc=?
-        WHERE ma_hocphan=?`;
-    
-    db.query(sql, [
-        ten_hocphan, 
-        parseInt(so_tinchi) || 0,
-        parseInt(tin_chi_ly_thuyet) || 0, 
-        parseInt(tin_chi_thuc_hanh) || 0, 
-        tienQuyet,    // ✅ NULL hoặc mã học phần hợp lệ
-        songHanh,     // ✅ NULL hoặc mã học phần hợp lệ
-        hocTruoc,     // ✅ NULL hoặc mã học phần hợp lệ
-        ma
-    ], (err, result) => {
+    validateHocPhanReferences([tienQuyet, songHanh, hocTruoc], (err, missingRefs) => {
         if (err) {
-            console.error('❌ Lỗi cập nhật học phần:', err);
+            console.error('❌ Lỗi kiểm tra học phần tiên quyết:', err);
             return res.status(500).json({ 
-                success: false,
-                error: 'Lỗi cập nhật học phần: ' + err.message 
-            });
-        }
-        
-        if (result.affectedRows === 0) {
-            console.log('❌ Không tìm thấy học phần:', ma);
-            return res.status(404).json({ 
                 success: false, 
-                error: 'Không tìm thấy học phần' 
+                error: 'Lỗi kiểm tra học phần tiên quyết' 
             });
         }
+        if (missingRefs.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Học phần tham chiếu không tồn tại: ' + missingRefs.join(', ')
+            });
+        }
+
+        const sql = `UPDATE hocphan SET 
+            ten_hocphan=?, 
+            so_tinchi=?,
+            tin_chi_ly_thuyet=?, 
+            tin_chi_thuc_hanh=?, 
+            hp_tien_quyet=?, 
+            hp_song_hanh=?, 
+            hp_hoc_truoc=?
+            WHERE ma_hocphan=?`;
         
-        console.log('✅ Cập nhật học phần thành công:', ma);
-        res.json({ 
-            success: true, 
-            message: 'Cập nhật học phần thành công' 
+        db.query(sql, [
+            ten_hocphan, 
+            parseInt(so_tinchi) || 0,
+            parseInt(tin_chi_ly_thuyet) || 0, 
+            parseInt(tin_chi_thuc_hanh) || 0, 
+            tienQuyet,    // ✅ NULL hoặc mã học phần hợp lệ
+            songHanh,     // ✅ NULL hoặc mã học phần hợp lệ
+            hocTruoc,     // ✅ NULL hoặc mã học phần hợp lệ
+            ma
+        ], (err, result) => {
+            if (err) {
+                console.error('❌ Lỗi cập nhật học phần:', err);
+                return res.status(500).json({ 
+                    success: false,
+                    error: 'Lỗi cập nhật học phần: ' + err.message 
+                });
+            }
+            
+            if (result.affectedRows === 0) {
+                console.log('❌ Không tìm thấy học phần:', ma);
+                return res.status(404).json({ 
+                    success: false, 
+                    error: 'Không tìm thấy học phần' 
+                });
+            }
+            
+            console.log('✅ Cập nhật học phần thành công:', ma);
+            res.json({ 
+                success: true, 
+                message: 'Cập nhật học phần thành công' 
+            });
         });
     });
 });
@@ -1772,12 +1838,14 @@ app.get('/api/hocphi/ctdt-list', (req, res) => {
 app.post('/api/hocphi', (req, res) => {
     console.log('📥 POST /api/hocphi - Body:', req.body);
     const { ma_ctdt, nam_hoc, gia_tin_chi, ghi_chu } = req.body;
+    const hasGiaTinChi = gia_tin_chi !== undefined && gia_tin_chi !== null && String(gia_tin_chi).trim() !== '';
+    const giaTinChiValue = Number(gia_tin_chi);
     
-    if (!ma_ctdt || !nam_hoc || !gia_tin_chi || gia_tin_chi <= 0) {
+    if (!ma_ctdt || !nam_hoc || !hasGiaTinChi || Number.isNaN(giaTinChiValue) || giaTinChiValue < 0) {
         console.log('❌ Dữ liệu không hợp lệ');
         return res.status(400).json({ 
             success: false, 
-            error: 'Vui lòng chọn CTĐT, năm học và nhập giá tín chỉ hợp lệ (> 0)' 
+            error: 'Vui lòng chọn CTĐT, năm học và nhập giá tín chỉ hợp lệ (>= 0)' 
         });
     }
     
@@ -1804,7 +1872,7 @@ app.post('/api/hocphi', (req, res) => {
             if (results.length > 0) {
                 // Cập nhật
                 const updateSql = 'UPDATE hocphi_config SET gia_tin_chi = ?, ghi_chu = ? WHERE ma_ctdt = ? AND nam_hoc = ?';
-                db.query(updateSql, [gia_tin_chi, ghi_chu || null, ma_ctdt, nam_hoc], (err) => {
+                db.query(updateSql, [giaTinChiValue, ghi_chu || null, ma_ctdt, nam_hoc], (err) => {
                     if (err) {
                         console.error('❌ Lỗi cập nhật học phí:', err);
                         return res.status(500).json({ success: false, error: 'Lỗi cập nhật học phí' });
@@ -1815,7 +1883,7 @@ app.post('/api/hocphi', (req, res) => {
             } else {
                 // Thêm mới
                 const insertSql = 'INSERT INTO hocphi_config (ma_ctdt, nam_hoc, gia_tin_chi, ghi_chu) VALUES (?, ?, ?, ?)';
-                db.query(insertSql, [ma_ctdt, nam_hoc, gia_tin_chi, ghi_chu || null], (err) => {
+                db.query(insertSql, [ma_ctdt, nam_hoc, giaTinChiValue, ghi_chu || null], (err) => {
                     if (err) {
                         console.error('❌ Lỗi thêm học phí:', err);
                         return res.status(500).json({ success: false, error: 'Lỗi thêm học phí' });
@@ -1832,19 +1900,21 @@ app.post('/api/hocphi', (req, res) => {
 app.put('/api/hocphi/:id', (req, res) => {
     const { id } = req.params;
     const { nam_hoc, gia_tin_chi, ghi_chu } = req.body;
+    const hasGiaTinChi = gia_tin_chi !== undefined && gia_tin_chi !== null && String(gia_tin_chi).trim() !== '';
+    const giaTinChiValue = Number(gia_tin_chi);
     
     console.log('📥 PUT /api/hocphi/' + id + ' - Dữ liệu:', req.body);
     
-    if (!nam_hoc || !gia_tin_chi || gia_tin_chi <= 0) {
+    if (!nam_hoc || !hasGiaTinChi || Number.isNaN(giaTinChiValue) || giaTinChiValue < 0) {
         console.log('❌ Dữ liệu không hợp lệ');
         return res.status(400).json({ 
             success: false, 
-            error: 'Vui lòng nhập năm học và giá tín chỉ hợp lệ (> 0)' 
+            error: 'Vui lòng nhập năm học và giá tín chỉ hợp lệ (>= 0)' 
         });
     }
     
     const sql = 'UPDATE hocphi_config SET nam_hoc = ?, gia_tin_chi = ?, ghi_chu = ? WHERE id_hocphi = ?';
-    db.query(sql, [nam_hoc, gia_tin_chi, ghi_chu || null, id], (err, result) => {
+    db.query(sql, [nam_hoc, giaTinChiValue, ghi_chu || null, id], (err, result) => {
         if (err) {
             console.error('❌ Lỗi cập nhật học phí:', err);
             return res.status(500).json({ success: false, error: 'Lỗi cập nhật học phí' });
