@@ -1,11 +1,11 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 const app = express();
 const PORT = 3000;
-const rateLimitStore = new Map();
 
 function isValidEmail(value) {
     if (typeof value !== 'string') {
@@ -21,27 +21,6 @@ function isValidEmail(value) {
         return false;
     }
     return true;
-}
-
-function createRateLimiter({ windowMs, max }) {
-    return (req, res, next) => {
-        const key = req.ip || req.connection?.remoteAddress || 'global';
-        const now = Date.now();
-        const entry = rateLimitStore.get(key);
-
-        if (!entry || now >= entry.resetAt) {
-            rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
-            return next();
-        }
-
-        if (entry.count >= max) {
-            return res.status(429).json({ error: 'Quá nhiều yêu cầu, vui lòng thử lại sau.' });
-        }
-
-        entry.count += 1;
-        rateLimitStore.set(key, entry);
-        return next();
-    };
 }
 
 // Middleware
@@ -1728,7 +1707,12 @@ app.delete('/api/khoahoc/:id', (req, res) => {
 
 
 // ====================== API HỌC PHÍ ======================
-const hocPhiRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60 });
+const hocPhiRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 // GET: Lấy danh sách cấu hình học phí với tính toán tự động
 app.get('/api/hocphi', (req, res) => {
