@@ -5,10 +5,43 @@ const path = require('path');
 
 const app = express();
 const PORT = 3000;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const rateLimitStore = new Map();
 
 function isValidEmail(value) {
-    return typeof value === 'string' && EMAIL_REGEX.test(value.trim());
+    if (typeof value !== 'string') {
+        return false;
+    }
+    const trimmed = value.trim();
+    const atIndex = trimmed.indexOf('@');
+    if (atIndex <= 0 || atIndex !== trimmed.lastIndexOf('@')) {
+        return false;
+    }
+    const domain = trimmed.slice(atIndex + 1);
+    if (!domain || domain.startsWith('.') || domain.endsWith('.') || !domain.includes('.')) {
+        return false;
+    }
+    return true;
+}
+
+function createRateLimiter({ windowMs, max }) {
+    return (req, res, next) => {
+        const key = req.ip || req.connection?.remoteAddress || 'global';
+        const now = Date.now();
+        const entry = rateLimitStore.get(key);
+
+        if (!entry || now >= entry.resetAt) {
+            rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+            return next();
+        }
+
+        if (entry.count >= max) {
+            return res.status(429).json({ error: 'Quá nhiều yêu cầu, vui lòng thử lại sau.' });
+        }
+
+        entry.count += 1;
+        rateLimitStore.set(key, entry);
+        return next();
+    };
 }
 
 // Middleware
@@ -1695,6 +1728,7 @@ app.delete('/api/khoahoc/:id', (req, res) => {
 
 
 // ====================== API HỌC PHÍ ======================
+const hocPhiRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60 });
 
 // GET: Lấy danh sách cấu hình học phí với tính toán tự động
 app.get('/api/hocphi', (req, res) => {
@@ -1835,7 +1869,7 @@ app.get('/api/hocphi/ctdt-list', (req, res) => {
 });
 
 // POST: Thêm/Cập nhật cấu hình học phí
-app.post('/api/hocphi', (req, res) => {
+app.post('/api/hocphi', hocPhiRateLimiter, (req, res) => {
     console.log('📥 POST /api/hocphi - Body:', req.body);
     const { ma_ctdt, nam_hoc, gia_tin_chi, ghi_chu } = req.body;
     const hasGiaTinChi = gia_tin_chi !== undefined && gia_tin_chi !== null && String(gia_tin_chi).trim() !== '';
@@ -1897,7 +1931,7 @@ app.post('/api/hocphi', (req, res) => {
 });
 
 // PUT: Cập nhật học phí
-app.put('/api/hocphi/:id', (req, res) => {
+app.put('/api/hocphi/:id', hocPhiRateLimiter, (req, res) => {
     const { id } = req.params;
     const { nam_hoc, gia_tin_chi, ghi_chu } = req.body;
     const hasGiaTinChi = gia_tin_chi !== undefined && gia_tin_chi !== null && String(gia_tin_chi).trim() !== '';
